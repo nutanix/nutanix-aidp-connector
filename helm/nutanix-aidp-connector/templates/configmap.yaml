@@ -1,0 +1,170 @@
+# Copyright (c) 2025 Nutanix Inc. All rights reserved.
+#
+# Author: veer.kumar@nutanix.com
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "nutanix-aidp-connector.fullname" . }}-config
+  namespace: {{ .Values.global.namespace | default .Release.Namespace }}
+  labels:
+    {{- include "nutanix-aidp-connector.labels" . | nindent 4 }}
+data:
+  config.yaml: |
+    kafka:
+      bootstrap_servers: "{{ .Values.kafka.bootstrapServers | default "" }}"
+      topic: "{{ .Values.kafka.topic }}"
+      group_id: "{{ .Values.kafka.groupId }}"
+      auto_offset_reset: "{{ .Values.kafka.autoOffsetReset | default "earliest" }}"
+      min_topic_partitions: {{ .Values.kafka.minTopicPartitions | default 1 }}
+      auto_commit: {{ .Values.kafka.autoCommit }}
+      consumer_timeout_ms: {{ .Values.kafka.consumerTimeoutMs }}
+      allowed_event_types:
+{{- range .Values.kafka.allowedEventTypes }}
+        - "{{ . }}"
+{{- end }}
+    s3:
+      region: "{{ .Values.s3.region }}"
+      download_dir: "{{ .Values.s3.downloadDir }}"
+      endpoint_url: "{{ .Values.s3.endpointUrl | default "" }}"
+      verify_ssl: {{ .Values.s3.verifySsl }}
+      # access_key and secret_key are NOT stored in ConfigMap for security
+      # They are read from environment variables (S3_ACCESS_KEY, S3_SECRET_KEY) set from Secrets
+
+    threading:
+      download_workers: {{ .Values.threading.downloadWorkers }}
+      submission_workers: {{ .Values.threading.submissionWorkers }}
+      status_check_workers: {{ .Values.threading.statusCheckWorkers }}
+      completion_workers: {{ .Values.threading.completionWorkers | default .Values.processing.maxOutstandingTasks | int }}
+
+    batching:
+      max_files: {{ .Values.batching.maxFiles | int }}
+      max_bytes: {{ .Values.batching.maxBytes | int }}
+      max_wait_seconds: {{ .Values.batching.maxWaitSeconds | int }}
+
+    nemo_retriever:
+      host: "{{ .Values.nemoRetriever.host | default "" }}"
+      port: {{ .Values.nemoRetriever.port }}
+      task_queue: "{{ .Values.nemoRetriever.taskQueue }}"
+      timeout: {{ .Values.nemoRetriever.timeout }}
+      text_depth: "{{ .Values.nemoRetriever.textDepth }}"
+      api_version: "{{ .Values.nemoRetriever.apiVersion | default "v2" }}"
+      pdf_split_page_count: {{ .Values.nemoRetriever.pdfSplitPageCount | default 1 }}
+      
+      # Supported document types
+      supported_extensions:
+{{- range .Values.nemoRetriever.supportedExtensions }}
+        - {{ . }}
+{{- end }}
+      
+      # Extract task configuration
+      extract:
+        extract_text: {{ if hasKey .Values.nemoRetriever.extract "extractText" }}{{ .Values.nemoRetriever.extract.extractText }}{{ else }}true{{ end }}
+        extract_images: {{ if hasKey .Values.nemoRetriever.extract "extractImages" }}{{ .Values.nemoRetriever.extract.extractImages }}{{ else }}true{{ end }}
+        extract_tables: {{ if hasKey .Values.nemoRetriever.extract "extractTables" }}{{ .Values.nemoRetriever.extract.extractTables }}{{ else }}true{{ end }}
+        extract_charts: {{ if hasKey .Values.nemoRetriever.extract "extractCharts" }}{{ .Values.nemoRetriever.extract.extractCharts }}{{ else }}true{{ end }}
+        extract_metadata: {{ if hasKey .Values.nemoRetriever.extract "extractMetadata" }}{{ .Values.nemoRetriever.extract.extractMetadata }}{{ else }}true{{ end }}
+        ocr_enabled: {{ if hasKey .Values.nemoRetriever.extract "ocrEnabled" }}{{ .Values.nemoRetriever.extract.ocrEnabled }}{{ else }}true{{ end }}
+        ocr_language: "{{ .Values.nemoRetriever.extract.ocrLanguage | default "eng" }}"
+        extract_tables_method: "{{ .Values.nemoRetriever.extract.extractTablesMethod | default "yolox" }}"
+        table_output_format: "{{ .Values.nemoRetriever.extract.tableOutputFormat | default "pseudo_markdown" }}"
+      
+      # Split task configuration
+      split:
+        enabled: {{ if hasKey .Values.nemoRetriever.split "enabled" }}{{ .Values.nemoRetriever.split.enabled }}{{ else }}true{{ end }}
+        split_by_page: {{ if hasKey .Values.nemoRetriever.split "splitByPage" }}{{ .Values.nemoRetriever.split.splitByPage }}{{ else }}true{{ end }}
+        split_by_size: {{ if hasKey .Values.nemoRetriever.split "splitBySize" }}{{ .Values.nemoRetriever.split.splitBySize }}{{ else }}true{{ end }}
+        max_character_length: {{ .Values.nemoRetriever.split.maxCharacterLength | default 1024 }}
+        sentence_window_size: {{ .Values.nemoRetriever.split.sentenceWindowSize | default 0 }}
+      
+      # Embed task configuration
+      embed:
+        enabled: {{ if hasKey .Values.nemoRetriever.embed "enabled" }}{{ .Values.nemoRetriever.embed.enabled }}{{ else }}true{{ end }}
+        dimensions: {{ .Values.nemoRetriever.embed.dimensions | default 2048 }}
+
+    processing:
+      max_retries: {{ .Values.processing.maxRetries }}
+      retry_base_delay: {{ .Values.processing.retryBaseDelay }}
+      retry_max_delay: {{ .Values.processing.retryMaxDelay }}
+      status_poll_interval: {{ .Values.processing.statusPollInterval }}
+      circuit_breaker_threshold: {{ .Values.processing.circuitBreakerThreshold }}
+      circuit_breaker_timeout: {{ .Values.processing.circuitBreakerTimeout }}
+      enable_sequence_execution: {{ .Values.processing.enableSequenceExecution }}
+      max_outstanding_tasks: {{ .Values.processing.maxOutstandingTasks }}
+
+    storage:
+      completed_metadata: "{{ .Values.storage.completedMetadata }}"
+      dead_letter: "{{ .Values.storage.deadLetter }}"
+      
+      # Milvus configuration
+      milvus:
+        enabled: {{ if hasKey .Values.storage.milvus "enabled" }}{{ .Values.storage.milvus.enabled }}{{ else }}true{{ end }}
+        host: "{{ .Values.storage.milvus.host | default "" }}"
+        port: {{ .Values.storage.milvus.port | default 0 }}
+        collection_name: "{{ .Values.storage.milvus.collectionName | default "nutanix_aidp_connector_objects_nemo_retriever" }}"
+        bucket: "{{ .Values.storage.milvus.bucket | default "aidp-milvus" }}"
+        index_type: "{{ .Values.storage.milvus.indexType | default "GPU_CAGRA" }}"
+        metric_type: "{{ .Values.storage.milvus.metricType | default "L2" }}"
+        nlist: {{ .Values.storage.milvus.nlist | default 1024 }}
+        nprobe: {{ .Values.storage.milvus.nprobe | default 10 }}
+        auto_id: {{ if hasKey .Values.storage.milvus "autoId" }}{{ .Values.storage.milvus.autoId }}{{ else }}true{{ end }}
+        consistency_level: "{{ .Values.storage.milvus.consistencyLevel | default "Strong" }}"
+        auto_create_collection: {{ if hasKey .Values.storage.milvus "autoCreateCollection" }}{{ .Values.storage.milvus.autoCreateCollection }}{{ else }}true{{ end }}
+        sparse: {{ if hasKey .Values.storage.milvus "sparse" }}{{ .Values.storage.milvus.sparse }}{{ else }}false{{ end }}
+        gpu_index: {{ if hasKey .Values.storage.milvus "gpuIndex" }}{{ .Values.storage.milvus.gpuIndex }}{{ else }}true{{ end }}
+        gpu_search: {{ if hasKey .Values.storage.milvus "gpuSearch" }}{{ .Values.storage.milvus.gpuSearch }}{{ else }}true{{ end }}
+        local_index: {{ if hasKey .Values.storage.milvus "localIndex" }}{{ .Values.storage.milvus.localIndex }}{{ else }}false{{ end }}
+        enable_filtered_collections: {{ if hasKey .Values.storage.milvus "enableFilteredCollections" }}{{ .Values.storage.milvus.enableFilteredCollections }}{{ else }}true{{ end }}
+        filtered_text_collection_name: {{ .Values.storage.milvus.filteredTextCollectionName | default "" | quote }}
+        filtered_tables_collection_name: {{ .Values.storage.milvus.filteredTablesCollectionName | default "" | quote }}
+        filtered_charts_collection_name: {{ .Values.storage.milvus.filteredChartsCollectionName | default "" | quote }}
+        cleanup_parquet_files: {{ if hasKey .Values.storage.milvus "cleanupParquetFiles" }}{{ .Values.storage.milvus.cleanupParquetFiles }}{{ else }}true{{ end }}
+        max_bulk_insert_files: {{ if hasKey .Values.storage.milvus "maxBulkInsertFiles" }}{{ .Values.storage.milvus.maxBulkInsertFiles }}{{ else }}128{{ end }}
+        batch_insert_max_files: {{ if hasKey .Values.storage.milvus "batchInsertMaxFiles" }}{{ .Values.storage.milvus.batchInsertMaxFiles }}{{ else }}10{{ end }}
+        batch_insert_max_wait_seconds: {{ if hasKey .Values.storage.milvus "batchInsertMaxWaitSeconds" }}{{ .Values.storage.milvus.batchInsertMaxWaitSeconds }}{{ else }}15{{ end }}
+      
+      # Objects configuration (S3-compatible service for Milvus/NeMo-Retriever storage)
+      # Note: This is separate from the s3: section above which is used for reading objects after Kafka notifications
+      objects:
+        enabled: {{ if hasKey .Values.storage.objects "enabled" }}{{ .Values.storage.objects.enabled }}{{ else }}true{{ end }}
+        endpoint_url: "{{ .Values.storage.objects.endpointUrl | default "" }}"
+        verify_ssl: {{ .Values.storage.objects.verifySsl | default false }}
+        # access_key and secret_key are NOT stored in ConfigMap for security
+        # They are read from environment variables (OBJECTS_ACCESS_KEY, OBJECTS_SECRET_KEY) set from Secrets
+        bucket: "{{ .Values.storage.objects.bucket | default "veer-test-bucket" }}"
+        region: "{{ .Values.storage.objects.region | default "us-east-1" }}"
+
+    logging:
+      level: "{{ .Values.logging.level }}"
+      format: "{{ .Values.logging.format }}"
+      log_file: "{{ .Values.logging.logFile }}"
+
+    telemetry:
+      enabled: {{ if hasKey .Values.telemetry "enabled" }}{{ .Values.telemetry.enabled }}{{ else }}true{{ end }}
+      service_name: "{{ .Values.telemetry.serviceName | default "nutanix-aidp-connector" }}"
+      service_version: "{{ .Values.telemetry.serviceVersion | default "1.0.0" }}"
+      prometheus_port: {{ .Values.telemetry.prometheusPort | default 9090 }}
+      prometheus_endpoint: "{{ .Values.telemetry.prometheusEndpoint | default "/metrics" }}"
+      metric_export_interval_ms: {{ .Values.telemetry.metricExportIntervalMs | default 5000 }}
+
+    # Baseline configuration for processing existing objects in buckets
+    baseline:
+      enabled: {{ if hasKey .Values.baseline "enabled" }}{{ .Values.baseline.enabled }}{{ else }}false{{ end }}
+      state_dir: "{{ .Values.baseline.stateDir | default "/var/lib/nutanix-aidp-connector/baseline/" }}"
+      list_batch_size: {{ .Values.baseline.listBatchSize | default 1000 }}
+      max_concurrent_listings: {{ .Values.baseline.maxConcurrentListings | default 3 }}
+      pause_kafka_during_baseline: {{ if hasKey .Values.baseline "pauseKafkaDuringBaseline" }}{{ .Values.baseline.pauseKafkaDuringBaseline }}{{ else }}true{{ end }}
+      auto_disable_completed_buckets: {{ if hasKey .Values.baseline "autoDisableCompletedBuckets" }}{{ .Values.baseline.autoDisableCompletedBuckets }}{{ else }}true{{ end }}
+      versioning_enabled: {{ if hasKey .Values.baseline "versioningEnabled" }}{{ .Values.baseline.versioningEnabled }}{{ else }}false{{ end }}
+      buckets:
+{{- if .Values.baseline.buckets }}
+{{- range .Values.baseline.buckets }}
+        - bucket_name: "{{ .bucketName }}"
+          enabled: {{ if hasKey . "enabled" }}{{ .enabled }}{{ else }}true{{ end }}
+          prefix: {{ .prefix | default "" | quote }}
+          force_rerun: {{ if hasKey . "forceRerun" }}{{ .forceRerun }}{{ else }}false{{ end }}
+{{- end }}
+{{- else }}
+        []
+{{- end }}
+

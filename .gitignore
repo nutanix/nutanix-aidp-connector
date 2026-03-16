@@ -1,0 +1,48 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.pyc
+*.pyd
+*.pyo
+*.egg-info/
+.eggs/
+
+# C extensions
+*.so
+
+# Distribution / packaging
+.Python
+env/
+venv/
+build/
+develop-eggs/
+dist/
+downloads/
+parts/
+sdist/
+var/
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Editors and IDEs
+.vscode/
+.idea/
+*.swp
+*.bak
+*~
+.DS_Store # macOS specific
+
+# Sphinx documentation
+docs/_build/
+
+# Testing
+.pytest_cache/
+
+# Jupyter Notebook
+.ipynb_checkpoints/
+
+# Logs
+*.log
+
+# Kubernetes configuration (contains sensitive credentials)
+scripts/kubeconfig.yaml
+scripts/*.conf

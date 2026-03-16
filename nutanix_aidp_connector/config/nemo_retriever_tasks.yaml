@@ -1,0 +1,88 @@
+# Copyright (c) 2025 Nutanix Inc. All rights reserved.
+#
+# Author: veer.kumar@nutanix.com
+
+# NeMo-Retriever Task Configuration
+# This file defines task configurations for document processing
+# Supports hot-reloading without container restart
+#
+# SUPPORTED FILE TYPES: Documents only (PDF, DOCX, DOC, TXT, MD, RTF, PPTX, PPT)
+# UNSUPPORTED FILE TYPES: Images, Audio, Video, Spreadsheets, Archives
+#   - Unsupported files are logged and sent to dead letter queue
+
+# File type mappings - Documents only
+file_types:
+  # Document types (supported)
+  pdf: "application/pdf"
+  docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+  doc: "application/msword"
+  txt: "text/plain"
+  md: "text/markdown"
+  rtf: "application/rtf"
+  pptx: "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+  ppt: "application/vnd.ms-powerpoint"
+  
+# Extract task configuration for documents
+extract_tasks:
+  document_types: ["pdf", "docx", "doc", "txt", "md", "rtf", "pptx", "ppt"]
+  document_config:
+    extract_text: true
+    extract_images: true
+    extract_tables: true
+    extract_charts: true
+    extract_metadata: true
+    extract_links: true
+    extract_footnotes: true
+    extract_headers: true
+    extract_footers: true
+    preserve_formatting: true
+    ocr_enabled: true
+    ocr_language: "eng"
+    ocr_confidence_threshold: 0.7
+    # NeMo-Retriever extraction parameters
+    extract_infographics: false
+    extract_page_as_image: false
+    extract_images_method: "group"  # "simple" or "group"
+    extract_tables_method: "yolox"  # "yolox" or "pdfium"
+    table_output_format: "pseudo_markdown"  # "markdown", "pseudo_markdown", "html", "json"
+  
+# Split task configuration for documents
+split_tasks:
+  document_types: ["pdf", "docx", "doc", "txt", "md", "rtf", "pptx", "ppt"]
+  document_config:
+    enabled: true
+    strategy: "semantic"  # semantic, fixed, sentence, paragraph
+    chunk_size: 1000
+    chunk_overlap: 200
+    tokenizer: "tiktoken"
+    min_chunk_size: 100
+    max_chunk_size: 2000
+    preserve_paragraphs: true
+    preserve_sections: true
+    split_by_headers: true
+    split_by_pages: true
+    custom_separators: ["\n\n", "\n", ".", "!", "?"]
+  
+# Embed task configuration for documents
+# Note: NeMo-Retriever server automatically selects the appropriate model
+embed_tasks:
+  document_types: ["pdf", "docx", "doc", "txt", "md", "rtf", "pptx", "ppt"]
+  document_config:
+    enabled: true
+    dimensions: 2048  # For reference only - not passed to EmbedTask
+
+# Batching configuration
+batching:
+  default_embed_batch_size: 100
+
+# Global settings
+global:
+  config_reload_interval: 30  # seconds
+  config_file_path: "/app/nutanix_aidp_connector/config/nemo_retriever_tasks.yaml"
+  max_concurrent_jobs: 10
+  job_timeout: 300  # seconds
+  retry_attempts: 3
+  retry_delay: 5  # seconds
+  log_level: "INFO"
+  log_processing_stats: true
+  log_embedding_stats: true

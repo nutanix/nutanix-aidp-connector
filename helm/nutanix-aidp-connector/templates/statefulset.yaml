@@ -1,0 +1,171 @@
+# Copyright (c) 2025 Nutanix Inc. All rights reserved.
+#
+# Author: veer.kumar@nutanix.com
+
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "nutanix-aidp-connector.fullname" . }}
+  namespace: {{ .Values.global.namespace | default .Release.Namespace }}
+  labels:
+    {{- include "nutanix-aidp-connector.labels" . | nindent 4 }}
+  {{- with .Values.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  serviceName: {{ include "nutanix-aidp-connector.fullname" . }}-headless
+  replicas: {{ .Values.deployment.replicas }}
+  podManagementPolicy: {{ .Values.deployment.podManagementPolicy | default "Parallel" }}
+  selector:
+    matchLabels:
+      {{- include "nutanix-aidp-connector.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "nutanix-aidp-connector.selectorLabels" . | nindent 8 }}
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      {{- if .Values.imagePullSecrets }}
+      imagePullSecrets:
+      {{- range .Values.imagePullSecrets }}
+        - name: {{ . }}
+      {{- end }}
+      {{- end }}
+      {{- if .Values.securityContext.enabled }}
+      securityContext:
+        fsGroup: {{ .Values.securityContext.fsGroup }}
+        runAsUser: {{ .Values.securityContext.runAsUser }}
+        runAsGroup: {{ .Values.securityContext.runAsGroup }}
+      {{- end }}
+      containers:
+        - name: {{ .Values.deployment.name }}
+          image: "{{ .Values.image.registry }}/{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: config-api
+              containerPort: {{ .Values.service.configApiPort }}
+              protocol: TCP
+            - name: metrics
+              containerPort: {{ .Values.telemetry.prometheusPort | default 9090 }}
+              protocol: TCP
+          env:
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: S3_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "nutanix-aidp-connector.fullname" . }}-secrets
+                  key: s3-access-key
+            - name: S3_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "nutanix-aidp-connector.fullname" . }}-secrets
+                  key: s3-secret-key
+            - name: OBJECTS_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "nutanix-aidp-connector.fullname" . }}-secrets
+                  key: objects-access-key
+            - name: OBJECTS_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "nutanix-aidp-connector.fullname" . }}-secrets
+                  key: objects-secret-key
+            - name: PIPELINE_CONFIG
+              value: "/app/nutanix_aidp_connector/config-data/config.yaml"
+            - name: PYTHONUNBUFFERED
+              value: {{ .Values.env.pythonUnbuffered | quote }}
+            - name: PYTHONPATH
+              value: {{ .Values.env.pythonPath | quote }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+            # Mount ConfigMap to separate directory to avoid overwriting Python modules
+            # Mount as directory (not subPath) to enable hot-reload
+            # Kubernetes updates files automatically when ConfigMap changes
+            - name: config
+              mountPath: /app/nutanix_aidp_connector/config-data
+              readOnly: true
+            {{- if .Values.emptyDir.completedMetadata.enabled }}
+            - name: completed-metadata
+              mountPath: /var/lib/nutanix-aidp-connector/completed
+            {{- end }}
+            {{- if .Values.emptyDir.deadLetter.enabled }}
+            - name: dead-letter
+              mountPath: /var/lib/nutanix-aidp-connector/dead_letter
+            {{- end }}
+            {{- if .Values.baseline.enabled }}
+            - name: baseline-state
+              mountPath: {{ .Values.baseline.stateDir | default "/var/lib/nutanix-aidp-connector/baseline/" }}
+            {{- end }}
+            {{- if .Values.persistence.logs.enabled }}
+            - name: logs
+              mountPath: /var/log/nutanix-aidp-connector
+            {{- end }}
+            {{- if .Values.emptyDir.downloads.enabled }}
+            - name: downloads
+              mountPath: {{ .Values.s3.downloadDir }}
+            {{- end }}
+          {{- if .Values.livenessProbe }}
+          livenessProbe:
+            {{- toYaml .Values.livenessProbe | nindent 12 }}
+          {{- end }}
+          {{- if .Values.readinessProbe }}
+          readinessProbe:
+            {{- toYaml .Values.readinessProbe | nindent 12 }}
+          {{- end }}
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "nutanix-aidp-connector.fullname" . }}-config
+        {{- if .Values.emptyDir.completedMetadata.enabled }}
+        - name: completed-metadata
+          emptyDir: {}
+        {{- end }}
+        {{- if .Values.emptyDir.deadLetter.enabled }}
+        - name: dead-letter
+          emptyDir: {}
+        {{- end }}
+        {{- if and .Values.baseline.enabled (not (and .Values.persistence.baselineState .Values.persistence.baselineState.enabled)) }}
+        - name: baseline-state
+          emptyDir: {}
+        {{- end }}
+        {{- if .Values.emptyDir.downloads.enabled }}
+        - name: downloads
+          emptyDir:
+            sizeLimit: {{ .Values.emptyDir.downloads.sizeLimit }}
+        {{- end }}
+      restartPolicy: Always
+  volumeClaimTemplates:
+    {{- if and .Values.persistence.baselineState .Values.persistence.baselineState.enabled .Values.baseline.enabled }}
+    - metadata:
+        name: baseline-state
+      spec:
+        accessModes:
+          - {{ .Values.persistence.baselineState.accessMode }}
+        {{- if .Values.persistence.baselineState.storageClass }}
+        storageClassName: {{ .Values.persistence.baselineState.storageClass }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ .Values.persistence.baselineState.size }}
+    {{- end }}
+    {{- if .Values.persistence.logs.enabled }}
+    - metadata:
+        name: logs
+      spec:
+        accessModes:
+          - {{ .Values.persistence.logs.accessMode }}
+        {{- if .Values.persistence.logs.storageClass }}
+        storageClassName: {{ .Values.persistence.logs.storageClass }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ .Values.persistence.logs.size }}
+    {{- end }}

@@ -1,0 +1,166 @@
+# Copyright (c) 2025 Nutanix Inc. All rights reserved.
+#
+# Author: veer.kumar@nutanix.com
+
+kafka:
+  bootstrap_servers: ""  # Set via ConfigMap or environment variable
+  topic: "OSSEvents"
+  group_id: "nutanix-aidp-connector-group3"
+  auto_commit: false
+  consumer_timeout_ms: 1000
+  allowed_event_types:
+    - "s3:ObjectCreated:Put"
+    - "s3:ObjectTagging:Put"
+    - "s3:ObjectRemoved:Delete"
+    - "s3:ObjectRemoved:DeleteMarkerCreated"
+
+s3:
+  region: "us-east-1"
+  download_dir: "/tmp/nutanix-aidp-connector-downloads"
+  endpoint_url: ""  # Set via ConfigMap or environment variable
+  verify_ssl: false
+  access_key: ""  # Set via ConfigMap or environment variable
+  secret_key: ""  # Set via ConfigMap or environment variable
+
+threading:
+  download_workers: 20
+  submission_workers: 10
+  status_check_workers: 5
+  completion_workers: 5  # Number of parallel workers for Milvus bulk inserts
+
+batching:
+  max_files: 10  # Must be <= max_outstanding_tasks (currently 10)
+  max_bytes: 2000000000  # 2GB
+  max_wait_seconds: 30
+
+nemo_retriever:
+  host: ""  # Set via ConfigMap or environment variable
+  port: 0  # Set via ConfigMap or environment variable
+  task_queue: "morpheus_task_queue"
+  timeout: 300
+  text_depth: "page"
+  api_version: "v2"  # V2 with pdf_split_page_count=1 so each page is one subjob; one bad page only affects that page
+  pdf_split_page_count: 1  # V2 only: 1 page per chunk -> 33-page PDF = 33 subjobs
+  
+  # Supported document types (only these file extensions are processed)
+  # Images, audio, video, spreadsheets, archives are NOT supported - sent to dead letter queue
+  supported_extensions:
+    - pdf
+    - docx
+    - doc
+    - txt
+    - md
+    - rtf
+    - pptx
+    - ppt
+  
+  # Extract task configuration for documents
+  extract:
+    extract_text: true
+    extract_images: true
+    extract_tables: true
+    extract_charts: true
+    extract_metadata: true
+    ocr_enabled: true
+    ocr_language: "eng"
+    extract_tables_method: "yolox"
+    table_output_format: "pseudo_markdown"
+  
+  # Split task configuration for documents
+  split:
+    enabled: true
+    split_by_page: true
+    split_by_size: false  # Set to false to match nemo-retriever client default (page-based only)
+    max_character_length: 1024  # Used only if split_by_size is true
+    sentence_window_size: 0
+  
+  # Embed task configuration for documents
+  embed:
+    enabled: true
+    dimensions: 2048  # Embedding dimension (must match NeMo-Retriever server's embedding model dimension)
+
+processing:
+  max_retries: 3
+  retry_base_delay: 1  # seconds
+  retry_max_delay: 60  # seconds
+  status_poll_interval: 5  # seconds
+  circuit_breaker_threshold: 5
+  circuit_breaker_timeout: 60  # seconds
+  enable_sequence_execution: false  # Wait for previous job to complete before submitting next job
+  max_outstanding_tasks: 10  # Max tasks pending with nemo-retriever. Downloads limited to 3x this value
+
+storage:
+  completed_metadata: "/var/lib/nutanix-aidp-connector/completed/"
+  dead_letter: "/var/lib/nutanix-aidp-connector/dead_letter/"
+  
+  # Milvus configuration
+  milvus:
+    enabled: true
+    host: ""  # Set via ConfigMap or environment variable
+    port: 0  # Set via ConfigMap or environment variable
+    collection_name: "nutanix_aidp_connector_objects_nemo_retriever"
+    bucket: "aidp-milvus"  # Bucket name for bulk insert (must match Milvus minio.bucketName)
+    index_type: "GPU_CAGRA"
+    metric_type: "L2"
+    nlist: 1024
+    nprobe: 10
+    auto_id: true
+    consistency_level: "Strong"
+    auto_create_collection: true  # Set to true to pre-create collection (NeMo-Retriever doesn't auto-create)
+    sparse: false  # Enable sparse vector field and BM25 function for hybrid search
+    gpu_index: true  # Use GPU_CAGRA index for dense vectors (requires GPU-enabled Milvus)
+    gpu_search: true  # Enable GPU-accelerated search
+    local_index: false  # Use local index (FLAT) instead of server-side index
+    enable_filtered_collections: true  # Enable creation and routing to filtered collections
+    filtered_text_collection_name: ""  # Collection name for filtered text content (optional, leave empty to disable)
+    filtered_tables_collection_name: ""  # Collection name for filtered table content (optional, leave empty to disable)
+    filtered_charts_collection_name: ""  # Collection name for filtered chart content (optional, leave empty to disable)
+    cleanup_parquet_files: true  # Clean up parquet files from Milvus and Objects buckets after successful bulk insert
+    max_bulk_insert_files: 128   # Max parquet files per do_bulk_insert request (0 = no limit). Batching reduces Milvus job count.
+    batch_insert_max_files: 10   # Source files to accumulate before combined Milvus bulk insert (0 = disable batching, per-file insert)
+    batch_insert_max_wait_seconds: 15  # Max seconds to wait before flushing an incomplete Milvus insert batch
+  
+  # Objects configuration (S3-compatible service for Milvus/NeMo-Retriever storage)
+  # Note: This is separate from the s3: section above which is used for reading objects after Kafka notifications
+  objects:
+    enabled: true
+    endpoint_url: ""  # Set via ConfigMap or environment variable - Format: host:port (HTTPS on port 443 - matches Milvus)
+    verify_ssl: false
+    access_key: ""  # Set via ConfigMap or environment variable
+    secret_key: ""  # Set via ConfigMap or environment variable
+    bucket: "veer-test-bucket"
+    region: "us-east-1"
+
+database:
+  # In-memory state management - no database configuration needed
+
+logging:
+  level: "DEBUG"
+  format: "json"
+  log_file: "/var/log/nutanix-aidp-connector/nutanix-aidp-connector.log"
+
+telemetry:
+  enabled: true
+  service_name: "nutanix-aidp-connector"
+  service_version: "1.0.0"
+  prometheus_port: 9090
+  prometheus_endpoint: "/metrics"
+  metric_export_interval_ms: 5000
+
+# Baseline configuration for processing existing objects in buckets
+# Use this to process objects that existed before Kafka notifications were enabled
+baseline:
+  enabled: false  # Set to true to enable baseline processing
+  state_dir: "/var/lib/nutanix-aidp-connector/baseline/"  # Directory to store baseline state files
+  list_batch_size: 1000  # Number of objects to list per API call (max 1000)
+  max_concurrent_listings: 3  # Maximum concurrent bucket listing operations
+  pause_kafka_during_baseline: true  # Pause Kafka consumption during baseline processing
+  auto_disable_completed_buckets: true  # Automatically mark buckets as disabled after completion
+  buckets: []  # List of buckets to process
+  # Example bucket configuration:
+  # buckets:
+  #   - bucket_name: "my-bucket-1"
+  #     enabled: true
+  #     prefix: "documents/"  # Optional: only process objects with this prefix
+  #   - bucket_name: "my-bucket-2"
+  #     enabled: true
