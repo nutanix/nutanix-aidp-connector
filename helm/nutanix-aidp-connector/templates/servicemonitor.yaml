@@ -1,0 +1,30 @@
+# Copyright (c) 2025 Nutanix Inc. All rights reserved.
+#
+# Author: veer.kumar@nutanix.com
+
+{{- if .Values.telemetry.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  # Include Release.Namespace so multiple Nutanix AIDP-Connector releases (e.g. nutanix-aidp-connector2, fd-nutanix-aidp-connector) can coexist in the same ServiceMonitor namespace
+  name: {{ include "nutanix-aidp-connector.fullname" . }}-{{ .Release.Namespace }}-monitor
+  # Namespace where Prometheus discovers ServiceMonitors (configured via telemetry.serviceMonitorNamespace)
+  namespace: {{ .Values.telemetry.serviceMonitorNamespace | default "aidp" }}
+  labels:
+    {{- include "nutanix-aidp-connector.labels" . | nindent 4 }}
+    # Label required for Prometheus to discover this ServiceMonitor
+    prometheus: nai
+spec:
+  selector:
+    matchLabels:
+      {{- include "nutanix-aidp-connector.selectorLabels" . | nindent 6 }}
+  endpoints:
+    - port: metrics
+      path: /metrics
+      interval: {{ .Values.telemetry.scrapeInterval | default "30s" }}
+      scrapeTimeout: {{ .Values.telemetry.scrapeTimeout | default "10s" }}
+  namespaceSelector:
+    matchNames:
+      - {{ .Values.global.namespace | default .Release.Namespace }}
+{{- end }}
+

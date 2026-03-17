@@ -1,0 +1,87 @@
+# Copyright (c) 2025 Nutanix Inc. All rights reserved.
+#
+# Author: veer.kumar@nutanix.com
+#
+# .dockerignore - Exclude files from Docker build context
+# This reduces build context size and improves build performance
+
+# Git files
+.git/
+.gitignore
+.gitattributes
+
+# Documentation
+*.md
+docs/
+ARCHITECTURE.md
+README.md
+
+# CI/CD
+.circleci/
+.github/
+
+# Development files
+.vscode/
+.idea/
+*.swp
+*.bak
+*~
+
+# Python cache and virtual environments
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.venv/
+*.egg-info/
+.eggs/
+dist/
+build/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Testing (excluded from production, but needed for Dockerfile.build)
+# Note: tests/ and pytest.ini are needed for Dockerfile.build
+# Production Dockerfile doesn't copy these, so including in context is fine
+helm/
+
+# Data files
+data/
+*.csv
+*.json
+*.yaml
+!nutanix_aidp_connector/config/*.yaml
+!requirements.txt
+
+# Logs
+*.log
+logs/
+
+# Kubernetes configs (may contain secrets)
+kubeconfig*.yaml
+*.conf
+
+# Build artifacts
+*.tar.gz
+*.zip
+
+# Docker files (don't need to copy Dockerfiles into images)
+Dockerfile*
+docker-compose*.yml
+.dockerignore
+
+# Package directory
+package/
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# OS files
+.DS_Store
+Thumbs.db

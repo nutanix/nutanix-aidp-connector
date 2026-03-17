@@ -1,0 +1,7 @@
+# Copyright (c) 2025 Nutanix Inc. All rights reserved.
+#
+# Author: veer.kumar@nutanix.com
+#
+# PVCs for logs and baseline-state are now managed via StatefulSet
+# volumeClaimTemplates (see statefulset.yaml). Each pod gets its own PVC
+# automatically, named <template-name>-<pod-name> (e.g. logs-nutanix-aidp-connector-0).

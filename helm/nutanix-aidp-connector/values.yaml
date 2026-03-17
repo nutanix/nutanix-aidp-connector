@@ -1,0 +1,298 @@
+# Copyright (c) 2025 Nutanix Inc. All rights reserved.
+#
+# Author: veer.kumar@nutanix.com
+#
+# Default values for nutanix-aidp-connector
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+
+# Global settings
+# Namespace can be overridden via --set global.namespace=your-namespace or environment variable
+# Default: nutanix-aidp-connector
+# To use a different namespace: export NAMESPACE=your-namespace && helm install ... --set global.namespace=$NAMESPACE
+global:
+  namespace: nutanix-aidp-connector
+
+# Image configuration
+image:
+  registry: veerkumarnutanix
+  repository: nutanix-aidp-connector
+  tag: "v1.0.0"
+  pullPolicy: Always
+
+# Image pull secrets for private registries
+# Example: imagePullSecrets: ["regcred"]
+# To create the secret: kubectl create secret docker-registry regcred --docker-server=docker.io --docker-username=YOUR_USERNAME --docker-password=YOUR_PASSWORD --docker-email=YOUR_EMAIL -n nutanix-aidp-connector
+imagePullSecrets: ["regcred"]
+
+# Deployment configuration (StatefulSet)
+# Multi-replica: Kafka consumer group rebalancing assigns unique partitions per pod.
+# Baseline processing runs only on pod ordinal 0 (leader).
+# The Kafka topic (OSSEvents) must have at least as many partitions as the replica
+# count; otherwise excess pods receive no messages and sit idle.
+deployment:
+  replicas: 1
+  name: nutanix-aidp-connector
+  podManagementPolicy: Parallel  # All pods start simultaneously (no ordered startup)
+
+# Service configuration
+service:
+  type: ClusterIP
+  configApiPort: 5001
+  metricsPort: 8000
+  # For NodePort/LoadBalancer, uncomment and set:
+  # nodePort: 30001
+
+# Security context
+securityContext:
+  enabled: true
+  fsGroup: 999
+  runAsUser: 999
+  runAsGroup: 999
+
+# Resource limits and requests
+resources:
+  requests:
+    memory: "2Gi"
+    cpu: "1000m"
+  limits:
+    memory: "16Gi"
+    cpu: "2000m"
+
+# Health probes
+livenessProbe:
+  httpGet:
+    path: /health
+    port: 5001
+  initialDelaySeconds: 60
+  periodSeconds: 30
+  timeoutSeconds: 10
+  failureThreshold: 3
+
+readinessProbe:
+  httpGet:
+    path: /health
+    port: 5001
+  initialDelaySeconds: 30
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 3
+
+# Kafka configuration
+kafka:
+  bootstrapServers: "aidp-dual-role-0.kafka"  # Required: Set via --set kafka.bootstrapServers="host:port"
+  topic: "OSSEvents"
+  groupId: "nutanix-aidp-connector-group"
+  # When consumer group has no committed offset: "earliest" = replay from start; "latest" = only new messages (use for new consumer groups)
+  autoOffsetReset: "latest"
+  # Informational: minimum topic partitions needed for multi-replica.
+  # Logged as a warning at startup if the actual partition count is lower.
+  minTopicPartitions: 1
+  autoCommit: false
+  consumerTimeoutMs: 1000
+  allowedEventTypes:
+    - "s3:ObjectCreated:Put"
+    - "s3:ObjectTagging:Put"
+    - "s3:ObjectCreated:CompleteMultipartUpload"
+    - "s3:ObjectRemoved:Delete"
+    - "s3:ObjectRemoved:DeleteMarkerCreated"
+
+# S3 configuration (for reading objects after Kafka notifications)
+s3:
+  region: "us-east-1"
+  downloadDir: "/tmp/nutanix-aidp-connector-downloads"
+  endpointUrl: ""  # Required: Set via --set s3.endpointUrl="https://host:port"
+  verifySsl: false
+  accessKey: ""  # Required: Set via --set s3.accessKey="key"
+  secretKey: ""  # Required: Set via --set s3.secretKey="secret"
+
+# Threading configuration
+threading:
+  downloadWorkers: 5
+  submissionWorkers: 10
+  statusCheckWorkers: 10
+  completionWorkers: 5  # Number of parallel workers for Milvus bulk inserts
+
+# Batching configuration
+batching:
+  maxFiles: 5  # Must be <= maxOutstandingTasks
+  maxBytes: 2000000000  # 2GB
+  maxWaitSeconds: 30
+
+# NeMo-Retriever configuration
+nemoRetriever:
+  host: "nv-ingest.nv-ingest"
+  port: 7670
+  taskQueue: "morpheus_task_queue"
+  timeout: 300
+  textDepth: "page"
+  # V2 with pdfSplitPageCount: controls how many pages per subjob when splitting PDFs
+  apiVersion: "v2"
+  pdfSplitPageCount: 16  # V2 only: 1-128; default 32 pages per subjob
+  
+  # Supported document types (only these file extensions are processed)
+  # Images, audio, video, spreadsheets, archives are NOT supported - sent to dead letter queue
+  supportedExtensions:
+    - pdf
+    - docx
+    - doc
+    - txt
+    - md
+    - rtf
+    - pptx
+    - ppt
+  
+  # Extract task configuration for documents
+  extract:
+    extractText: true
+    extractImages: false
+    extractTables: true
+    extractCharts: true
+    extractMetadata: false
+    ocrEnabled: false
+    ocrLanguage: "eng"
+    extractTablesMethod: "yolox"
+    tableOutputFormat: "pseudo_markdown"
+  
+  # Split task configuration for documents
+  split:
+    enabled: true
+    splitByPage: true
+    splitBySize: false  # Set to false to match nemo-retriever client default (page-based only)
+    maxCharacterLength: 1024  # Used only if splitBySize is true
+    sentenceWindowSize: 0
+  
+  # Embed task configuration for documents
+  embed:
+    enabled: true
+    dimensions: 2048  # Embedding dimension (must match NeMo-Retriever server's embedding model dimension)
+
+# Processing configuration
+processing:
+  maxRetries: 3
+  retryBaseDelay: 1
+  retryMaxDelay: 60
+  statusPollInterval: 5
+  circuitBreakerThreshold: 5
+  circuitBreakerTimeout: 60
+  enableSequenceExecution: false  # Wait for previous job to complete before submitting next job
+  maxOutstandingTasks: 50  # Max tasks pending with NeMo-Retriever server. Downloads limited to 3x this value
+
+# Storage paths
+storage:
+  completedMetadata: "/var/lib/nutanix-aidp-connector/completed/"
+  deadLetter: "/var/lib/nutanix-aidp-connector/dead_letter/"
+  
+  # Milvus configuration
+  milvus:
+    enabled: true
+    host: "milvus-vectordb.milvus"
+    port: 19530
+    collectionName: "userdocuments_noimages_noocr"
+    bucket: "milvus-store"  # Must match Milvus minio.bucketName configuration
+    indexType: "GPU_CAGRA"
+    metricType: "L2"
+    nlist: 1024
+    nprobe: 10
+    autoId: true
+    consistencyLevel: "Bounded"
+    autoCreateCollection: true
+    sparse: false  # Enable sparse vector field and BM25 function for hybrid search
+    gpuIndex: true  # Use GPU_CAGRA index for dense vectors (requires GPU-enabled Milvus)
+    gpuSearch: true  # Enable GPU-accelerated search
+    localIndex: false  # Use local index (FLAT) instead of server-side index
+    enableFilteredCollections: false  # Enable creation and routing to filtered collections
+    filteredTextCollectionName: "connector_text_collection1"  # Collection name for filtered text content (optional, leave empty to disable)
+    filteredTablesCollectionName: "connector_table_collection1"  # Collection name for filtered table content (optional, leave empty to disable)
+    filteredChartsCollectionName: "connector_chart_collection1"  # Collection name for filtered chart content (optional, leave empty to disable)
+    cleanupParquetFiles: true  # Clean up parquet files from Milvus and Objects buckets after successful bulk insert
+    maxBulkInsertFiles: 128    # Max parquet files per do_bulk_insert request (0 = no limit). Batching reduces Milvus job count.
+    batchInsertMaxFiles: 10    # Source files to accumulate before combined Milvus bulk insert (0 = disable, per-file)
+    batchInsertMaxWaitSeconds: 15  # Max seconds to wait before flushing an incomplete Milvus insert batch
+  
+  # Objects configuration (S3-compatible service for Milvus/NeMo-Retriever storage)
+  # Note: This is separate from the s3: section above which is used for reading objects after Kafka notifications
+  objects:
+    enabled: true
+    endpointUrl: ""  # Required: Set via --set storage.objects.endpointUrl="host:port"
+    verifySsl: false
+    accessKey: ""  # Required: Set via --set storage.objects.accessKey="key"
+    secretKey: ""  # Required: Set via --set storage.objects.secretKey="secret"
+    bucket: "nutanix-aidp-connector-staging"
+    region: "us-east-1"
+
+# Logging configuration
+logging:
+  level: "INFO"
+  format: "json"
+  logFile: "/var/log/nutanix-aidp-connector/pipeline.log"
+
+# Telemetry/OpenTelemetry configuration
+telemetry:
+  enabled: true
+  serviceName: "nutanix-aidp-connector"
+  serviceVersion: "1.0.0"
+  prometheusPort: 9090
+  prometheusEndpoint: "/metrics"
+  metricExportIntervalMs: 5000
+  # ServiceMonitor settings for Prometheus scraping
+  scrapeInterval: "30s"
+  scrapeTimeout: "10s"
+  # Namespace where ServiceMonitor should be created (must match Prometheus namespace)
+  serviceMonitorNamespace: "aidp"
+
+# Baseline configuration for processing existing objects in buckets
+# Use this to process objects that existed before Kafka notifications were enabled
+baseline:
+  enabled: true  # Enable baseline processing
+  versioningEnabled: false  # Set true if S3 bucket versioning is enabled; omits version IDs from keys when false
+  stateDir: "/var/lib/nutanix-aidp-connector/baseline/"  # Directory to store baseline state files
+  listBatchSize: 1000  # Number of objects to list per API call (max 1000)
+  maxConcurrentListings: 1  # Process one bucket at a time
+  pauseKafkaDuringBaseline: true  # Pause Kafka consumption during baseline processing
+  autoDisableCompletedBuckets: true  # Automatically mark buckets as disabled after completion
+  
+  buckets:
+    - bucketName: "user-documents"
+      enabled: true
+      forceRerun: true  # Set true to clear saved state and re-run baseline from scratch
+      # prefix: ""  # Optional: leave empty to process all objects in the bucket
+    # Each bucket has: bucketName, enabled, prefix (optional), forceRerun (optional)
+    # Set forceRerun: true, deploy, then set it back to false to avoid re-running on every restart
+
+# Persistent Volume Claims
+persistence:
+  logs:
+    enabled: true
+    size: 5Gi
+    accessMode: ReadWriteOnce
+    storageClass: ""  # Use default storage class if empty
+  baselineState:
+    enabled: true
+    size: 1Gi
+    accessMode: ReadWriteOnce
+    storageClass: ""
+
+# EmptyDir volumes
+emptyDir:
+  downloads:
+    enabled: true
+    sizeLimit: 50Gi
+  completedMetadata:
+    enabled: true
+  deadLetter:
+    enabled: true
+
+# Environment variables
+env:
+  pythonUnbuffered: "1"
+  pythonPath: "/app/nutanix_aidp_connector"
+  pipelineConfig: "/app/nutanix_aidp_connector/config-data/config.yaml"
+
+# Labels and annotations
+labels: {}
+annotations: {}
+
+# Pod labels and annotations
+podLabels: {}
+podAnnotations: {}

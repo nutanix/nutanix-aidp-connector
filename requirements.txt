@@ -1,0 +1,39 @@
+# Copyright (c) 2025 Nutanix Inc. All rights reserved.
+#
+# Author: veer.kumar@nutanix.com
+
+# Python 3.12+ required for nv-ingest-client compatibility
+# Existing dependencies
+boto3==1.34.144
+botocore==1.34.144
+confluent-kafka==2.3.0
+
+# New pipeline dependencies
+pydantic==2.5.0
+pyyaml==6.0.1
+flask==3.1.3  # >=3.1.3 for CVE-2026-27205 / GHSA-68rp-wp8r-4726 (Vary: Cookie on session key access)
+
+# Testing dependencies
+pytest==7.4.3
+pytest-mock==3.12.0
+pytest-asyncio==0.21.1
+pytest-cov==4.1.0
+
+# NeMo-Retriever client (still published as nv-ingest-client on PyPI) (Python >=3.11); requires nv-ingest-api at runtime
+nv-ingest-api==26.1.2
+nv-ingest-client==26.1.2
+
+# Milvus client
+pymilvus==2.6.2
+
+# Parquet file support for reading embedding dimensions from MinIO
+# pyarrow>=16 required by nv-ingest-client's lancedb dependency
+pyarrow>=16,<17
+pandas==2.2.0
+
+# OpenTelemetry for observability
+opentelemetry-api==1.27.0
+opentelemetry-sdk==1.27.0
+opentelemetry-exporter-prometheus==0.48b0
+opentelemetry-instrumentation==0.48b0
+prometheus-client==0.21.0

@@ -1,0 +1,74 @@
+# Copyright (c) 2025 Nutanix Inc. All rights reserved.
+#
+# Author: veer.kumar@nutanix.com
+
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "nutanix-aidp-connector.fullname" . }}-pre-install-validation
+  namespace: {{ .Values.global.namespace | default .Release.Namespace }}
+  labels:
+    {{- include "nutanix-aidp-connector.labels" . | nindent 4 }}
+    app.kubernetes.io/component: validation
+  annotations:
+    "helm.sh/hook": pre-install,pre-upgrade
+    "helm.sh/hook-weight": "-5"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  template:
+    metadata:
+      labels:
+        {{- include "nutanix-aidp-connector.labels" . | nindent 8 }}
+        app.kubernetes.io/component: validation
+    spec:
+      restartPolicy: Never
+      containers:
+      - name: validation
+        image: busybox:latest
+        command:
+        - /bin/sh
+        - -c
+        - |
+          set -e
+          echo "Validating filtered collections configuration..."
+          
+          ENABLE_FILTERED_COLLECTIONS="{{ .Values.storage.milvus.enableFilteredCollections | default false }}"
+          TEXT_COLLECTION="{{ .Values.storage.milvus.filteredTextCollectionName | default "" }}"
+          TABLES_COLLECTION="{{ .Values.storage.milvus.filteredTablesCollectionName | default "" }}"
+          CHARTS_COLLECTION="{{ .Values.storage.milvus.filteredChartsCollectionName | default "" }}"
+          
+          echo "enableFilteredCollections: ${ENABLE_FILTERED_COLLECTIONS}"
+          echo "filteredTextCollectionName: '${TEXT_COLLECTION}'"
+          echo "filteredTablesCollectionName: '${TABLES_COLLECTION}'"
+          echo "filteredChartsCollectionName: '${CHARTS_COLLECTION}'"
+          
+          if [ "${ENABLE_FILTERED_COLLECTIONS}" = "true" ]; then
+            echo "Filtered collections are enabled, checking if at least one collection name is provided..."
+            
+            TEXT_TRIMMED=$(echo "${TEXT_COLLECTION}" | tr -d '[:space:]')
+            TABLES_TRIMMED=$(echo "${TABLES_COLLECTION}" | tr -d '[:space:]')
+            CHARTS_TRIMMED=$(echo "${CHARTS_COLLECTION}" | tr -d '[:space:]')
+            
+            if [ -z "${TEXT_TRIMMED}" ] && [ -z "${TABLES_TRIMMED}" ] && [ -z "${CHARTS_TRIMMED}" ]; then
+              echo "ERROR: enableFilteredCollections is true but no filtered collection names are provided!"
+              echo "Please provide at least one of:"
+              echo "  - filteredTextCollectionName"
+              echo "  - filteredTablesCollectionName"
+              echo "  - filteredChartsCollectionName"
+              exit 1
+            fi
+            
+            echo "Validation passed: At least one filtered collection name is provided"
+          else
+            echo "Filtered collections are disabled, skipping collection name validation"
+          fi
+          
+          echo "All validations passed!"
+        securityContext:
+          runAsNonRoot: true
+          runAsUser: 65534
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+            - ALL

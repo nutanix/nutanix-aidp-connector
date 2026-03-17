@@ -1,0 +1,28 @@
+# Copyright (c) 2025 Nutanix Inc. All rights reserved.
+#
+# Author: veer.kumar@nutanix.com
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "nutanix-aidp-connector.fullname" . }}
+  namespace: {{ .Values.global.namespace | default .Release.Namespace }}
+  labels:
+    {{- include "nutanix-aidp-connector.labels" . | nindent 4 }}
+spec:
+  type: {{ .Values.service.type }}
+  selector:
+    {{- include "nutanix-aidp-connector.selectorLabels" . | nindent 4 }}
+  ports:
+    - name: config-api
+      port: {{ .Values.service.configApiPort }}
+      targetPort: {{ .Values.service.configApiPort }}
+      protocol: TCP
+      {{- if and (eq .Values.service.type "NodePort") .Values.service.nodePort }}
+      nodePort: {{ .Values.service.nodePort }}
+      {{- end }}
+    - name: metrics
+      port: {{ .Values.telemetry.prometheusPort | default 9090 }}
+      targetPort: {{ .Values.telemetry.prometheusPort | default 9090 }}
+      protocol: TCP
+
