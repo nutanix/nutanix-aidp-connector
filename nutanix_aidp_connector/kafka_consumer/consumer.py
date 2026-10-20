@@ -301,9 +301,9 @@ class PipelineKafkaConsumer:
                 's3_key': s3_info['key'],
                 'file_size': s3_info['size'],
                 's3_version': s3_info.get('version'),  # Include version if available
-                'kafka_partition': s3_info.get('partition', 0),
-                'kafka_offset': s3_info.get('offset', 0),
-                'kafka_topic': s3_info.get('topic', self.topic),
+                'kafka_partition': msg.partition() if msg is not None else s3_info.get('partition', 0),
+                'kafka_offset': msg.offset() if msg is not None else s3_info.get('offset', 0),
+                'kafka_topic': msg.topic() if msg is not None else s3_info.get('topic', self.topic),
                 'enqueued_at': time.time(),
             }
             
@@ -338,9 +338,9 @@ class PipelineKafkaConsumer:
                 's3_key': s3_info['key'],
                 's3_version': s3_info.get('version'),  # Include version if available
                 'event_type': s3_info.get('event_type'),
-                'kafka_partition': s3_info.get('partition', 0),
-                'kafka_offset': s3_info.get('offset', 0),
-                'kafka_topic': s3_info.get('topic', self.topic)
+                'kafka_partition': msg.partition() if msg is not None else s3_info.get('partition', 0),
+                'kafka_offset': msg.offset() if msg is not None else s3_info.get('offset', 0),
+                'kafka_topic': msg.topic() if msg is not None else s3_info.get('topic', self.topic)
             }
             
             # Add to delete queue
